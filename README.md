@@ -18,9 +18,11 @@ lvm role
 
 ## Role Variables
 
-Available variables are listed below, along with default values:
+Available variables are listed below:
 
 ```yaml
+lvm_volume_group_name: default
+lvm_physical_device: /dev/xvdh
 ```
 
 ## License
