@@ -1,0 +1,4 @@
+---
+
+lvm_volume_group_name: default
+lvm_physical_device: ""

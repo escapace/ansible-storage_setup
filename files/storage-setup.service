@@ -1,0 +1,11 @@
+[Unit]
+Before=local-fs.target docker.service
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/storage-setup
+
+[Install]
+RequiredBy=docker.service
