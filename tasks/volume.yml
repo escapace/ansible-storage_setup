@@ -1,0 +1,35 @@
+---
+- name: install latest device-mapper-libs
+  yum:
+    name: device-mapper-libs
+    state: latest
+
+- name: install latest xfsprogs
+  yum:
+    name: xfsprogs
+    state: latest
+
+- name: install LVM tools
+  yum:
+    name: lvm2
+    state: latest
+
+- name: enable lvmetad service
+  service:
+    name: lvm2-lvmetad
+    enabled: yes
+    state: started
+
+- name: create directory for volume configs
+  file:
+    state: directory
+    path: /etc/filesystems.d
+    mode: 755
+
+- name: copy volume configuration file
+  template:
+    src: templates/volume-group.conf.j2
+    dest: /etc/filesystems.d/10-volume-group.conf
+
+- name: install storage-setup
+  include: install.yml

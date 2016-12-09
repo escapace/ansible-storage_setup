@@ -1,0 +1,18 @@
+---
+
+- name: install partitioner script
+  copy:
+    src: storage-setup.py
+    dest: /usr/bin/storage-setup
+    mode: 0755
+
+- name: install partitioner service
+  copy:
+    src: storage-setup.service
+    dest: /usr/lib/systemd/system/storage-setup.service
+    mode: 0644
+
+- name: enable partitioner service
+  service:
+    name: storage-setup.service
+    enabled: yes
