@@ -114,8 +114,8 @@ def process_vg(sec, params):
         devs_to_add = dev_list - current_devs
 
         for each in devs_to_add:
-            subprocess.check_call([PVCREATE_CMD, each])
-            subprocess.check_call([VGEXTEND_CMD, name, each])
+            subprocess.check_call([PVCREATE_CMD, '-ff', '-y', each])
+            subprocess.check_call([VGEXTEND_CMD, '-f', '-y', name, each])
         for each in devs_to_remove:
             subprocess.check_call([VGREDUCE_CMD, name, each])
 
