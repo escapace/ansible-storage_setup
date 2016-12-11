@@ -120,7 +120,7 @@ def process_vg(sec, params):
             subprocess.check_call([VGREDUCE_CMD, name, each])
 
     else:
-        subprocess.check_call([VGCREATE_CMD] + vgoptions + ['-s', str(pesize), name] + list(dev_list))
+        subprocess.check_call([VGCREATE_CMD, '-f', '-y', '-Zy'] + vgoptions + ['-s', str(pesize), name] + list(dev_list))
 
 pct_re = re.compile(r'^(\d+)%(PVS|VG|FREE)$')
 size_re = re.compile(r'^(\d+)([bskmgtpe])b?$')
