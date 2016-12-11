@@ -4,5 +4,5 @@
   hosts: localhost
   roles:
     - role: provision_docker
-      probision_docker_teardown: true
+      provision_docker_teardown: true
       provision_docker_inventory_group: "{{ groups['test-images'] }}"
