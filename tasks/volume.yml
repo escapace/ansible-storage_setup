@@ -32,4 +32,4 @@
     dest: /etc/filesystems.d/10-volume-group.conf
 
 - name: install storage-setup
-  include: install.yml
+  include_tasks: install.yml
