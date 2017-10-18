@@ -1,5 +1,7 @@
 [Unit]
-Before=local-fs.target docker.service
+Before=docker.service
+After=blk-availability.service multipathd.service iscsid.service
+Wants=blk-availability.service multipathd.service iscsid.service
 DefaultDependencies=no
 
 [Service]
