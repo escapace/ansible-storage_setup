@@ -95,6 +95,9 @@ def process_vg(sec, params):
     dev_list = set(map(os.path.realpath, safe_split(params.get(sec, 'devices'))))
     current_devs = set()
 
+    for test_dev in dev_list:
+       wait_for_device(test_dev) 
+
     # check for device files
     for test_dev in dev_list:
         if not os.path.exists(test_dev):
@@ -268,6 +271,7 @@ def process_thin(sec, params):
         check_call(convert)
 
     # re-read lvs after all
+    time.sleep(5)
     this = find_this(lvs(vg, size_opt == 'l' and 'm' or size_unit), "lv_name", pool)
     dm_name = "/sys/dev/block/{lv_kernel_major}:{lv_kernel_minor}/dm/name".format(**this)
     with closing(open(dm_name, "r")) as f:

@@ -1,7 +1,7 @@
 [Unit]
 Before=docker.service
-After=blk-availability.service multipathd.service iscsid.service
-Wants=blk-availability.service multipathd.service iscsid.service
+After=blk-availability.service lvm2-lvmetad.service dm-event.service
+Wants=blk-availability.service lvm2-lvmetad.service dm-event.service
 DefaultDependencies=no
 
 [Service]
@@ -11,3 +11,4 @@ ExecStart=/usr/bin/storage-setup
 
 [Install]
 RequiredBy=docker.service
+
