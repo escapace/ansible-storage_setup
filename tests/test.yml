@@ -6,5 +6,5 @@
 
 - hosts: test-images
   roles:
-  - role: epiloque.lvm
+  - role: escapace.lvm
     lvm_physical_device: /dev/something
