@@ -1,7 +1,6 @@
 galaxy_info:
-  author: Mark Milstein
   description: lvm role
-  issue_tracker_url: https://github.com/epiloque/ansible-lvm/issues
+  issue_tracker_url: https://github.com/escapace/ansible-lvm/issues
   license: Apache-2.0
   min_ansible_version: 2.4
   github_branch: master
@@ -11,7 +10,7 @@ galaxy_info:
     - 7
 
   galaxy_tags:
-  - epiloque
+  - escapace
   - lvm
 
 dependencies: []
