@@ -1,15 +1,4 @@
-lvm role
+[![build status](https://travis-ci.org/escapace/ansible-roles.svg?branch=master)](https://travis-ci.org/escapace/ansible-roles)
+[![license](https://img.shields.io/github/license/escapace/ansible-roles.svg)](<>)
 
-* installs required software and tools
-* enables lvmetad daemon
-* creates lvm volume group and adds provided block device to it as physical volume
-* reigsers volume group name fact
-
-## Role Variables
-
-Available variables are listed below:
-
-```yaml
-lvm_volume_group_name: default
-lvm_physical_device: /dev/xvdh
-```
+Please see the [ansible-roles](https://github.com/escapace/ansible-roles) monorepo for further information.
