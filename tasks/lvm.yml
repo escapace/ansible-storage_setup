@@ -1,7 +1,6 @@
 ---
 
 - include_tasks: volume.yml
-  when: lvm_physical_device != ""
 
 - name: save volume group name as fact
   set_fact: volume_group_name="{{ lvm_volume_group_name }}"
