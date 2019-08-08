@@ -2,9 +2,9 @@
   hosts: localhost
   roles:
     - role: provision_docker
-      provision_docker_inventory_group: "{{ groups['test-images'] }}"
+      provision_docker_inventory_group: "{{ groups['test'] }}"
 
-- hosts: test-images
+- hosts: test
   roles:
   - role: escapace.lvm
     lvm_physical_device: /dev/something
