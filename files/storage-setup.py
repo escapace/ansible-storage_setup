@@ -1,6 +1,6 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import subprocess
-from ConfigParser import ConfigParser, NoOptionError
+from configparser import ConfigParser, NoOptionError
 import os
 import time
 import sys
@@ -26,7 +26,7 @@ def fail(*a):
 
 
 def safe_split(s):
-    return filter(None, re.compile("\s+").split(s.strip()))
+    return [_f for _f in re.compile("\s+").split(s.strip()) if _f]
 
 
 def optional(call, sec, opt, default):
@@ -37,12 +37,12 @@ def optional(call, sec, opt, default):
 
 
 def check_output(c, *a, **kw):
-    print "READ: ", c
-    return subprocess.check_output(c, *a, **kw)
+    print("READ: ", c)
+    return subprocess.check_output(c, *a, **kw, encoding='utf-8')
 
 
 def check_call(c, *a, **kw):
-    print "EXEC: ", c
+    print("EXEC: ", c)
     return subprocess.check_call(c, *a, **kw)
 
 
@@ -144,10 +144,10 @@ def parse_size(size):
 
 
 def wait_for_device(dev):
-    print "--> Wait for device {}".format(dev)
+    print("--> Wait for device {}".format(dev))
     for sec in range(0, 60):
         if os.path.exists(dev):
-            print "--> Device {} appears in {} seconds".format(dev, sec)
+            print("--> Device {} appears in {} seconds".format(dev, sec))
             break
         time.sleep(1)
 
@@ -162,10 +162,10 @@ def process_volume(sec, params):
     this = find_this(lvs(vg, size_opt == 'l' and 'm' or size_unit), "lv_name", lv)
 
     if not this:
-        print "--> Create volume {}".format(lv)
+        print("--> Create volume {}".format(lv))
         check_call([LVCREATE_CMD, "-n", lv, "-" + size_opt, str(size) + size_unit, vg])
     else:
-        print "--> Do nothing. Volume {} already exists".format(lv)
+        print("--> Do nothing. Volume {} already exists".format(lv))
 
 
 UNIT_TEMPLATE = """
@@ -197,13 +197,13 @@ def process_fs(sec, params):
 
     # FIXME: should we stop, if it contain FS of different type?
     if exist_fs != fstype:
-        print "--> Formatting filesystem {} with {}".format(dev, fstype)
+        print("--> Formatting filesystem {} with {}".format(dev, fstype))
         check_call(["mkfs", "-t", fstype, dev])
     else:
-        print "--> Do nothing. Filesystem {} already formatted".format(dev)
+        print("--> Do nothing. Filesystem {} already formatted".format(dev))
 
     if params.has_option(sec, "mount"):
-        print "--> Create mount for {}".format(dev)
+        print("--> Create mount for {}".format(dev))
         mount = params.get(sec, "mount")
         mountname = mount.lstrip("/").replace("/", "-")
         unit = "{}.mount".format(mountname)
@@ -213,8 +213,12 @@ def process_fs(sec, params):
         wanted_by = safe_split(optional(params.get, sec, "wanted_by", ""))
 
         if not os.path.exists(unitfile):
+            if not os.path.ismount(mount):
+                check_call(["mount", dev, mount, '-t', fstype])
+                check_call(["bash", "-c", "selinuxenabled && restorecon -R " + mount, "| true"])
+                check_call(["umount", mount])
             with closing(open(unitfile, "w")) as f:
-                print "--> Writing {}".format(unitfile)
+                print("--> Writing {}".format(unitfile))
                 f.write(UNIT_TEMPLATE.format(
                     what=dev,
                     where=mount,
@@ -223,11 +227,11 @@ def process_fs(sec, params):
                     required_by=" ".join(required_by),
                     before=" ".join(wanted_by+required_by)))
         else:
-            print "--> Not writing {}, it already exists".format(unitfile)
+            print("--> Not writing {}, it already exists".format(unitfile))
         check_call(["systemctl", "enable", unit])
         check_call(["systemctl", "daemon-reload"])
     else:
-        print "--> Not mounting {}".format(dev)
+        print("--> Not mounting {}".format(dev))
 
 def write_file(sec, params):
     filename = params.get(sec, "file")
@@ -236,7 +240,7 @@ def write_file(sec, params):
 
     if not os.path.exists(filename):
         with closing(open(filename, "w")) as f:
-            print "WRITE: " + filename
+            print("WRITE: " + filename)
             f.write(content)
             if crlf:
                 f.write("\n")
@@ -255,15 +259,15 @@ def process_thin(sec, params):
     if this:
         if not "thin" in this['lv_layout']:
             fail("Volume {} exists, and it not thin pool".format(pool))
-        print "--> Volume {} already created".format(pool)
+        print("--> Volume {} already created".format(pool))
     else:
 
         meta_size = free_space(vg, "s") / 1000 + 1
-        print "--> Create meta volume {} for thin pool".format(meta)
+        print("--> Create meta volume {} for thin pool".format(meta))
         check_call([LVCREATE_CMD, "-n", meta, "-L",  str(meta_size) + "s", vg])
-        print "--> Create data volume {} for thin pool".format(data)
+        print("--> Create data volume {} for thin pool".format(data))
         check_call([LVCREATE_CMD, "-n", data, "-" + size_opt, str(size) + size_unit, vg])
-        print "--> Create thin pool {}".format(pool)
+        print("--> Create thin pool {}".format(pool))
         convert = [LVCONVERT_CMD, "-y", "--zero", "n" ]
         if chunk_size:
             convert.extend(["-c", chunk_size])
@@ -279,7 +283,7 @@ def process_thin(sec, params):
 
     DOCKER_STORAGE_CONF = "/etc/sysconfig/docker-storage"
     conf = optional(params.get, sec, "config", DOCKER_STORAGE_CONF)
-    print "--> Write {}".format(conf)
+    print("--> Write {}".format(conf))
     with closing(open(conf, "w")) as f:
         f.write("""STORAGE_OPTIONS=--storage-driver devicemapper --storage-opt dm.thinpooldev=/dev/mapper/{mapper} {extra}""".format(mapper=mapper_device, extra=extra))
     check_call(["systemctl", "daemon-reload"])
@@ -295,9 +299,9 @@ def iterate_config(prefix, fun, cp):
 def main():
     dir = "/etc/filesystems.d"
     for each in sorted(os.listdir(dir)):
-        cp = ConfigParser()
+        cp = ConfigParser(interpolation=None)
         fn = os.path.join(dir, each)
-        print "==> Processing: " + fn
+        print("==> Processing: " + fn)
         cp.read(fn)
         iterate_config("group", process_vg, cp)
         iterate_config("thin", process_thin, cp)
@@ -305,7 +309,7 @@ def main():
         iterate_config("filesystem", process_fs, cp)
         iterate_config("write", write_file, cp)
 
-    print "==> ALL DONE!"
+    print("==> ALL DONE!")
 
 if __name__ == '__main__':
     main()

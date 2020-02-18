@@ -1,30 +1,20 @@
 ---
-- name: install latest device-mapper-libs
-  yum:
-    name: device-mapper-libs
+
+- name: install latest device-mapper-libs, lvm2 & xfsprogs
+  package:
+    name: ["device-mapper-libs", "xfsprogs", "lvm2"]
     state: latest
 
-- name: install latest xfsprogs
-  yum:
-    name: xfsprogs
-    state: latest
-
-- name: install LVM tools
-  yum:
-    name: lvm2
-    state: latest
-
-- name: enable lvmetad service
-  service:
-    name: lvm2-lvmetad
-    enabled: yes
-    state: started
+- name: install python3
+  package:
+    name: python3
+    state: present
 
 - name: create directory for volume configs
   file:
     state: directory
     path: /etc/filesystems.d
-    mode: 755
+    mode: 0755
 
 - name: copy volume configuration file
   template:
