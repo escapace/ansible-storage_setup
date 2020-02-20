@@ -1,0 +1,6 @@
+---
+- name: Converge
+  hosts: all
+  roles:
+    - role: escapace.lvm
+      lvm_physical_device: /dev/something
