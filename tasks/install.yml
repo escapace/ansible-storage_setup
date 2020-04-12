@@ -1,5 +1,10 @@
 ---
 
+- name: install latest device-mapper-libs, lvm2 & xfsprogs
+  package:
+    name: ["device-mapper-libs", "xfsprogs", "lvm2", "python3"]
+    state: latest
+
 - name: install partitioner script
   copy:
     src: storage-setup.py
@@ -12,7 +17,15 @@
     dest: /usr/lib/systemd/system/storage-setup.service
     mode: 0644
 
+- name: create directory for volume configs
+  file:
+    state: directory
+    path: /etc/filesystems.d
+    mode: 0755
+
 - name: enable partitioner service
   service:
     name: storage-setup.service
     enabled: yes
+
+

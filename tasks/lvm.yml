@@ -1,6 +1,9 @@
 ---
 
-- include_tasks: volume.yml
-
 - name: save volume group name as fact
   set_fact: volume_group_name="{{ lvm_volume_group_name }}"
+
+- name: copy volume configuration file
+  template:
+    src: templates/volume-group.conf.j2
+    dest: /etc/filesystems.d/10-volume-group.conf
