@@ -1,4 +1,8 @@
 ---
 
+- include_tasks: install.yml
+  when: (ansible_os_family == "RedHat")
+
 - include_tasks: lvm.yml
   when: (ansible_os_family == "RedHat") and (lvm_physical_device is defined) and (lvm_physical_device | trim | length > 0)
+
