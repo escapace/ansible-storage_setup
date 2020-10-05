@@ -1,9 +1,12 @@
+---
+
 galaxy_info:
+  role_name: lvm
   description: lvm role
   issue_tracker_url: https://github.com/escapace/ansible-lvm/issues
   license: Apache-2.0
   author: Escapace
-  min_ansible_version: 2.9
+  min_ansible_version: 2.10
   github_branch: trunk
   platforms:
   - name: EL
