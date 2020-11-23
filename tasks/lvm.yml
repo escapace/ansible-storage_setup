@@ -7,3 +7,4 @@
   template:
     src: templates/volume-group.conf.j2
     dest: /etc/filesystems.d/10-volume-group.conf
+    mode: 0644

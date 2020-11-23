@@ -27,5 +27,3 @@
   service:
     name: storage-setup.service
     enabled: yes
-
-
