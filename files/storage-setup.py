@@ -96,7 +96,7 @@ def process_vg(sec, params):
     current_devs = set()
 
     for test_dev in dev_list:
-       wait_for_device(test_dev) 
+       wait_for_device(test_dev)
 
     # check for device files
     for test_dev in dev_list:
@@ -144,6 +144,9 @@ def parse_size(size):
 
 
 def wait_for_device(dev):
+    check_call(["vgscan", "--mknodes", "-v"])
+    check_call(["udevadm", "trigger"])
+
     print("--> Wait for device {}".format(dev))
     for sec in range(0, 60):
         if os.path.exists(dev):
@@ -298,6 +301,7 @@ def iterate_config(prefix, fun, cp):
 
 def main():
     dir = "/etc/filesystems.d"
+
     for each in sorted(os.listdir(dir)):
         cp = ConfigParser(interpolation=None)
         fn = os.path.join(dir, each)
