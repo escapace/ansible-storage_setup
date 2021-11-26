@@ -2,5 +2,5 @@
 - name: Converge
   hosts: all
   roles:
-    - role: escapace.lvm
+    - role: escapace.storage_setup
       storage_setup_physical_device: /dev/something
