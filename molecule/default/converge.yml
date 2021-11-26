@@ -3,4 +3,4 @@
   hosts: all
   roles:
     - role: escapace.lvm
-      lvm_physical_device: /dev/something
+      storage_setup_physical_device: /dev/something
