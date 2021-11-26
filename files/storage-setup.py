@@ -248,51 +248,6 @@ def write_file(sec, params):
             if crlf:
                 f.write("\n")
 
-def process_thin(sec, params):
-    pool = params.get(sec, "pool")
-    meta = optional(params.get, sec, "meta", "{}-meta".format(pool))
-    data = optional(params.get, sec, "data", pool)
-    chunk_size = optional(params.get, sec, "chunk_size", None)
-    extra = optional(params.get, sec, "extra_docker_params", "")
-    vg = params.get(sec, "group")
-    size = params.get(sec, "size")
-    size, size_opt, size_unit = parse_size(size)
-
-    this = find_this(lvs(vg, size_opt == 'l' and 'm' or size_unit), "lv_name", pool)
-    if this:
-        if not "thin" in this['lv_layout']:
-            fail("Volume {} exists, and it not thin pool".format(pool))
-        print("--> Volume {} already created".format(pool))
-    else:
-
-        meta_size = free_space(vg, "s") / 1000 + 1
-        print("--> Create meta volume {} for thin pool".format(meta))
-        check_call([LVCREATE_CMD, "-n", meta, "-L",  str(meta_size) + "s", vg])
-        print("--> Create data volume {} for thin pool".format(data))
-        check_call([LVCREATE_CMD, "-n", data, "-" + size_opt, str(size) + size_unit, vg])
-        print("--> Create thin pool {}".format(pool))
-        convert = [LVCONVERT_CMD, "-y", "--zero", "n" ]
-        if chunk_size:
-            convert.extend(["-c", chunk_size])
-        convert.extend(["--thinpool", "{}/{}".format(vg, data), "--poolmetadata", "{}/{}".format(vg, meta)])
-        check_call(convert)
-
-    # re-read lvs after all
-    time.sleep(5)
-    this = find_this(lvs(vg, size_opt == 'l' and 'm' or size_unit), "lv_name", pool)
-    dm_name = "/sys/dev/block/{lv_kernel_major}:{lv_kernel_minor}/dm/name".format(**this)
-    with closing(open(dm_name, "r")) as f:
-        mapper_device = f.readline().strip()
-
-    DOCKER_STORAGE_CONF = "/etc/sysconfig/docker-storage"
-    conf = optional(params.get, sec, "config", DOCKER_STORAGE_CONF)
-    print("--> Write {}".format(conf))
-    with closing(open(conf, "w")) as f:
-        f.write("""STORAGE_OPTIONS=--storage-driver devicemapper --storage-opt dm.thinpooldev=/dev/mapper/{mapper} {extra}""".format(mapper=mapper_device, extra=extra))
-    check_call(["systemctl", "daemon-reload"])
-
-
-
 def iterate_config(prefix, fun, cp):
     for each in sorted(cp.sections()):
         if each.startswith(prefix):
@@ -308,7 +263,6 @@ def main():
         print("==> Processing: " + fn)
         cp.read(fn)
         iterate_config("group", process_vg, cp)
-        iterate_config("thin", process_thin, cp)
         iterate_config("volume", process_volume, cp)
         iterate_config("filesystem", process_fs, cp)
         iterate_config("write", write_file, cp)
