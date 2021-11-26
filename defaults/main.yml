@@ -1,4 +1,4 @@
 ---
 
-lvm_volume_group_name: default
-lvm_physical_device: ""
+storage_setup_volume_group_name: default
+storage_setup_physical_device: ""

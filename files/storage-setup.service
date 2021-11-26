@@ -1,5 +1,6 @@
 [Unit]
 Before=docker.service
+Before=consul.service
 After=blk-availability.service lvm2-lvmetad.service dm-event.service
 Wants=blk-availability.service lvm2-lvmetad.service dm-event.service
 DefaultDependencies=no
