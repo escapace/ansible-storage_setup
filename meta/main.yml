@@ -1,9 +1,9 @@
 ---
 
 galaxy_info:
-  role_name: lvm
-  description: lvm role
-  issue_tracker_url: https://github.com/escapace/ansible-lvm/issues
+  role_name: storage_setup
+  description: storage setup role
+  issue_tracker_url: https://github.com/escapace/ansible-storage_setup/issues
   license: Apache-2.0
   author: escapace
   min_ansible_version: 2.10
