@@ -215,10 +215,24 @@ def process_fs(sec, params):
         required_by = safe_split(optional(params.get, sec, "required_by", ""))
         wanted_by = safe_split(optional(params.get, sec, "wanted_by", ""))
 
+        user = optional(params.get, sec, "user", False)
+        group = optional(params.get, sec, "group", False)
+        mode = optional(params.get, sec, "mode", False)
+
         if not os.path.exists(unitfile):
             if not os.path.ismount(mount):
                 check_call(["mount", dev, mount, '-t', fstype])
                 check_call(["bash", "-c", "selinuxenabled && restorecon -R " + mount, "| true"])
+
+                if isinstance(user, str):
+                  check_call(["chown", user, mount])
+
+                if isinstance(group, str):
+                  check_call(["chgrp", group, mount])
+
+                if isinstance(mode, str):
+                  check_call(["chgrp", group, mount])
+
                 check_call(["umount", mount])
             with closing(open(unitfile, "w")) as f:
                 print("--> Writing {}".format(unitfile))
@@ -233,6 +247,7 @@ def process_fs(sec, params):
             print("--> Not writing {}, it already exists".format(unitfile))
         check_call(["systemctl", "enable", unit])
         check_call(["systemctl", "daemon-reload"])
+        check_call(["systemctl", "start", unit])
     else:
         print("--> Not mounting {}".format(dev))
 

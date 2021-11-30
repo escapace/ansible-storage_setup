@@ -9,7 +9,3 @@ DefaultDependencies=no
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/bin/storage-setup
-
-[Install]
-RequiredBy=docker.service
-
