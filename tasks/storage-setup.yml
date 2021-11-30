@@ -1,7 +1,7 @@
 ---
 
-- name: save volume group name as fact
-  set_fact: volume_group_name="{{ storage_setup_volume_group_name }}"
+# - name: save volume group name as fact
+#   set_fact: volume_group_name="{{ storage_setup_volume_group_name }}"
 
 - name: copy volume configuration file
   template:
