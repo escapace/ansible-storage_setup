@@ -85,6 +85,9 @@ def find_this(lst, key, val):
         if each[key] == val:
             return each
 
+def device_name(name):
+  return check_output(["bash", "-c", "udevadm info --query=property --name={} | grep DEVNAME= | cut -d= -f2-".format(name)]).strip()
+
 def process_vg(sec, params):
     name = params.get(sec, "name")
     force = optional(params.getboolean, sec, "force", False)
@@ -92,7 +95,12 @@ def process_vg(sec, params):
     vgoptions = safe_split(optional(params.get, sec, "options", ""))
 
     # split and check for symlinks
-    dev_list = set(map(os.path.realpath, safe_split(params.get(sec, 'devices'))))
+    dev_list = set(
+      map(
+        device_name,
+        map(os.path.realpath, safe_split(params.get(sec, 'devices')))
+      )
+    )
     current_devs = set()
 
     for test_dev in dev_list:
@@ -117,13 +125,13 @@ def process_vg(sec, params):
         devs_to_add = dev_list - current_devs
 
         for each in devs_to_add:
-            subprocess.check_call([PVCREATE_CMD, '-ff', '-y', each])
-            subprocess.check_call([VGEXTEND_CMD, '-f', '-y', name, each])
+            check_call([PVCREATE_CMD, '-ff', '-y', each])
+            check_call([VGEXTEND_CMD, '-f', '-y', name, each])
         for each in devs_to_remove:
-            subprocess.check_call([VGREDUCE_CMD, name, each])
+            check_call([VGREDUCE_CMD, name, each])
 
     else:
-        subprocess.check_call([VGCREATE_CMD, '-f', '-y', '-Zy'] + vgoptions + ['-s', str(pesize), name] + list(dev_list))
+        check_call([VGCREATE_CMD, '-f', '-y', '-Zy'] + vgoptions + ['-s', str(pesize), name] + list(dev_list))
 
 pct_re = re.compile(r'^(\d+)%(PVS|VG|FREE)$')
 size_re = re.compile(r'^(\d+)([bskmgtpe])b?$')
@@ -146,6 +154,7 @@ def parse_size(size):
 def wait_for_device(dev):
     check_call(["vgscan", "--mknodes", "-v"])
     check_call(["udevadm", "trigger"])
+    check_call(["udevadm", "settle"])
 
     print("--> Wait for device {}".format(dev))
     for sec in range(0, 60):
@@ -171,8 +180,7 @@ def process_volume(sec, params):
         print("--> Do nothing. Volume {} already exists".format(lv))
 
 
-UNIT_TEMPLATE = """
-[Unit]
+UNIT_TEMPLATE = """[Unit]
 Before=local-fs.target {before}
 
 [Mount]
@@ -231,7 +239,7 @@ def process_fs(sec, params):
                   check_call(["chgrp", group, mount])
 
                 if isinstance(mode, str):
-                  check_call(["chgrp", group, mount])
+                  check_call(["chmod", mode, mount])
 
                 check_call(["umount", mount])
             with closing(open(unitfile, "w")) as f:
@@ -243,10 +251,13 @@ def process_fs(sec, params):
                     wanted_by=" ".join(wanted_by),
                     required_by=" ".join(required_by),
                     before=" ".join(wanted_by+required_by)))
+
+            check_call(["chmod", "644", unitfile])
+            check_call(["systemctl", "daemon-reload"])
         else:
             print("--> Not writing {}, it already exists".format(unitfile))
-        check_call(["systemctl", "enable", unit])
-        check_call(["systemctl", "daemon-reload"])
+
+        # check_call(["systemctl", "enable", unit])
         check_call(["systemctl", "start", unit])
     else:
         print("--> Not mounting {}".format(dev))

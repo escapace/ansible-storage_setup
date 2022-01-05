@@ -1,12 +1,9 @@
 [Unit]
-Before=docker.service
-Before=consul.service
-Before=nomad.service
-After=blk-availability.service lvm2-lvmetad.service dm-event.service
-Wants=blk-availability.service lvm2-lvmetad.service dm-event.service
+After=blk-availability.service local-fs.target remote-fs.target systemd-udev-settle.service
+Wants=blk-availability.service local-fs.target remote-fs.target systemd-udev-settle.service
 DefaultDependencies=no
 
 [Service]
 Type=oneshot
-RemainAfterExit=yes
+RemainAfterExit=no
 ExecStart=/usr/bin/storage-setup
