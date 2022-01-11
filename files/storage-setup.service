@@ -1,6 +1,6 @@
 [Unit]
-After=blk-availability.service local-fs.target remote-fs.target systemd-udev-settle.service
-Wants=blk-availability.service local-fs.target remote-fs.target systemd-udev-settle.service
+After=blk-availability.service local-fs.target remote-fs.target systemd-udev-settle.service dm-event.service
+Wants=blk-availability.service local-fs.target remote-fs.target systemd-udev-settle.service dm-event.service
 DefaultDependencies=no
 
 [Service]
