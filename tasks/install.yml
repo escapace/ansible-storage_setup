@@ -23,7 +23,5 @@
     path: /etc/filesystems.d
     mode: 0755
 
-- name: enable partitioner service
-  service:
-    name: storage-setup.service
-    enabled: yes
+- name: enable storage-setup
+  service: name=storage-setup enabled=yes
