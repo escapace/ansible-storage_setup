@@ -40,11 +40,9 @@ def check_output(c, *a, **kw):
     print("READ: ", c)
     return subprocess.check_output(c, *a, **kw, encoding='utf-8')
 
-
 def check_call(c, *a, **kw):
     print("EXEC: ", c)
     return subprocess.check_call(c, *a, **kw)
-
 
 def mapper_device_name(dm_device):
     dm_name = check_output([DMSETUP_CMD, "info",  "-C", "--noheadings",  "-o", "name",  dm_device])
@@ -101,6 +99,7 @@ def process_vg(sec, params):
         map(os.path.realpath, safe_split(params.get(sec, 'devices')))
       )
     )
+
     current_devs = set()
 
     for test_dev in dev_list:
@@ -152,7 +151,9 @@ def parse_size(size):
 
 
 def wait_for_device(dev):
+    check_call(["pvscan", "--cache", "-aay"])
     check_call(["vgscan", "--mknodes", "-v"])
+    check_call(["vgchange", "-a", "y"])
     check_call(["udevadm", "trigger"])
     check_call(["udevadm", "settle"])
 
