@@ -154,7 +154,6 @@ def wait_for_device(dev):
     check_call(["pvscan", "--cache", "-aay"])
     check_call(["vgscan", "--mknodes", "-v"])
     check_call(["vgchange", "-a", "y"])
-    check_call(["udevadm", "trigger"])
     check_call(["udevadm", "settle"])
 
     print("--> Wait for device {}".format(dev))
