@@ -25,3 +25,5 @@
 
 - name: enable storage-setup
   service: name=storage-setup enabled=yes
+  tags:
+    - notest
