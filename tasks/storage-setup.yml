@@ -4,7 +4,7 @@
 #   set_fact: volume_group_name="{{ storage_setup_volume_group_name }}"
 
 - name: copy volume configuration file
-  template:
+  ansible.builtin.template:
     src: templates/volume-group.conf.j2
     dest: /etc/filesystems.d/10-volume-group.conf
     mode: 0644
