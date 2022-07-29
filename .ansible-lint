@@ -1,4 +1,8 @@
 ---
 
 skip_list:
-  - '403'
+  - command-instead-of-shell
+  - experimental
+  - ignore-errors
+  - no-changed-when
+  - schema
