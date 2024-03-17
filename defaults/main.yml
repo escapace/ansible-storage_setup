@@ -1,4 +1,3 @@
 ---
-
 storage_setup_volume_group_name: default
 storage_setup_physical_device: ""
