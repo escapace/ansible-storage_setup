@@ -1,5 +1,4 @@
 ---
-
 # - name: save volume group name as fact
 #   set_fact: volume_group_name="{{ storage_setup_volume_group_name }}"
 
@@ -7,4 +6,4 @@
   ansible.builtin.template:
     src: templates/volume-group.conf.j2
     dest: /etc/filesystems.d/10-volume-group.conf
-    mode: 0644
+    mode: "0644"
