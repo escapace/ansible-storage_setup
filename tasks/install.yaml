@@ -8,19 +8,19 @@
   ansible.builtin.copy:
     src: storage-setup.py
     dest: /usr/bin/storage-setup
-    mode: "0755"
+    mode: '0755'
 
 - name: install partitioner service
   ansible.builtin.copy:
     src: storage-setup.service
     dest: /usr/lib/systemd/system/storage-setup.service
-    mode: "0644"
+    mode: '0644'
 
 - name: create directory for volume configs
   ansible.builtin.file:
     state: directory
     path: /etc/filesystems.d
-    mode: "0755"
+    mode: '0755'
 
 - name: enable storage-setup
   ansible.builtin.service:

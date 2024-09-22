@@ -2,5 +2,5 @@
 - name: Converge
   hosts: all
   roles:
-    - role: escapace.storage_setup
+    - role: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | basename }}"
       storage_setup_physical_device: /dev/something

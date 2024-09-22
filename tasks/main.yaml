@@ -1,6 +1,6 @@
 ---
-- ansible.builtin.include_tasks: install.yml
+- ansible.builtin.include_tasks: install.yaml
   when: (ansible_os_family == "RedHat")
 
-- ansible.builtin.include_tasks: storage-setup.yml
+- ansible.builtin.include_tasks: storage-setup.yaml
   when: (ansible_os_family == "RedHat") and (storage_setup_physical_device is defined) and (storage_setup_physical_device | trim | length > 0)
