@@ -1,6 +1,11 @@
 ---
-- name: Converge
+- name: converge
   hosts: all
+  pre_tasks:
+    - name: install systemd for role testing
+      ansible.builtin.package:
+        name: systemd
+        state: present
   roles:
     - role: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | basename }}"
       storage_setup_physical_device: /dev/something

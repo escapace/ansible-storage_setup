@@ -1,0 +1,8 @@
+[Unit]
+Requires={{ storage_setup_device_units.stdout }}
+After={{ storage_setup_device_units.stdout }}
+
+[Service]
+{% for device in storage_setup_physical_device.split() %}
+ExecStartPre=/usr/bin/test -b {{ device }}
+{% endfor %}

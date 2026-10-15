@@ -4,8 +4,11 @@ ls:
   .yml: kebab-case
 
 ignore:
+  - .ansible
   - .git
   - .github
   - .ls-lint.yaml
   - .venv
+  - meta/argument_specs.yaml
   - node_modules
+  - vendor

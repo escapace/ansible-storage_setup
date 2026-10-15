@@ -1,9 +1,18 @@
 [Unit]
-After=blk-availability.service local-fs.target remote-fs.target systemd-udev-settle.service dm-event.service
-Wants=blk-availability.service local-fs.target remote-fs.target systemd-udev-settle.service dm-event.service
-DefaultDependencies=no
+Description=Configure dedicated storage
+Wants=blk-availability.service
+After=blk-availability.service local-fs.target
 
 [Service]
 Type=oneshot
-RemainAfterExit=no
+RemainAfterExit=yes
 ExecStart=/usr/bin/storage-setup
+TimeoutStartSec=15min
+UMask=0077
+NoNewPrivileges=yes
+LockPersonality=yes
+RestrictRealtime=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

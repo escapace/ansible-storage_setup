@@ -1,0 +1,4 @@
+.ansible
+.git
+.venv
+node_modules
