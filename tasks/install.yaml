@@ -6,7 +6,7 @@
 
 - name: install partitioner script
   ansible.builtin.copy:
-    src: storage-setup.py
+    src: storage-setup/storage-setup.py
     dest: /usr/bin/storage-setup
     owner: root
     group: root
@@ -24,7 +24,7 @@
 - name: create directory for volume configs
   ansible.builtin.file:
     state: directory
-    path: /etc/filesystems.d
+    path: /etc/storage-setup.d
     owner: root
     group: root
     mode: "0755"

@@ -65,7 +65,7 @@ The unit enables:
 
 This is limited hardening, not a sandbox for untrusted configuration. The script
 runs as root, modifies storage, and can request work from the system manager.
-Root controls all configuration in `/etc/filesystems.d`. Offline
+Root controls all configuration in `/etc/storage-setup.d`. Offline
 `systemd-analyze security` still reports broad exposure; its score is not a
 compatibility test or proof that storage operations are safe.
 
@@ -122,11 +122,18 @@ volume group. Docker's `--privileged` also exposes all host devices.
 
 ## Direct execution without systemd
 
-`tests/storage-setup.py` exercises safe script paths without a service manager.
-Build and run the dedicated test image from the repository:
+The independent Python project lives in `files/storage-setup/`, with its own
+`pyproject.toml`, `uv.lock`, and tests. Checks use isolated uv environments outside
+the repository: the generated filename-lint configuration does not ignore nested
+`.venv` directories. The root Python project remains dedicated to Ansible tooling.
+The role installs only
+`files/storage-setup/storage-setup.py`, not the development files beside it.
+
+`files/storage-setup/tests/storage-setup.py` exercises safe script paths without
+a service manager. Build and run the dedicated test image from the repository:
 
 ```bash
-bash tests/run-docker.sh
+bash files/storage-setup/tests/run-docker.sh
 ```
 
 The runner builds and uses the exact image ID, avoiding shared image-tag races.
@@ -155,10 +162,10 @@ LVM operation nor end-to-end filesystem provisioning through the unmodified
 entry point. No loop device, kernel filesystem mount, udev trigger, or systemd
 call runs in these tests.
 
-The parser and direct file-writing tests also run locally with:
+Run only the parser and direct file-writing tests locally with:
 
 ```bash
-uv run python -W error tests/storage-setup.py
+uv run --isolated --locked --directory files/storage-setup python -W error tests/storage-setup.py
 ```
 
 Local execution skips the container-only CLI and opt-in formatting tests. Strict
@@ -170,18 +177,28 @@ was changed to a raw regex string without changing its matching behavior.
 Ruff checks imports, Python errors, and missing function annotations, and formats
 both Python files. ty checks the production script and test harness. Both target
 Python 3.12, matching the managed-host test image; the locked development tools
-run under Python 3.14. `pyproject.toml` and `uv.lock` pin the tool versions.
+run under Python 3.14. The nested project's `pyproject.toml` and `uv.lock` pin the
+tool versions independently of the normalizer-managed root project.
+
+Run Ruff lint and format checks, ty, and local tests from the repository root.
+Each command uses the nested lockfile in an isolated environment, without syncing
+or changing the Ansible environment:
 
 ```bash
-uv sync --locked
-uv run ruff check
-uv run ruff format --check
-uv run ty check --error-on-warning
+bash files/storage-setup/check.sh
 ```
 
-Use `uv run ruff format` to apply formatting. Pre-commit hooks enforce these
-checks and run the local tests. The Python CI job also runs the isolated Docker
-suite through the same runner used locally.
+For manual uv commands, use `--isolated` rather than creating a nested `.venv`
+with `uv sync` or a plain `uv run`. For example, apply formatting from the
+repository root with:
+
+```bash
+uv run --isolated --locked --directory files/storage-setup ruff format
+```
+
+Python checks and the isolated Docker suite run manually; they are not wired
+into CI or pre-commit hooks. The nested project survives normalization without
+changes to the normalizer.
 
 Functions have parameter and return annotations, including optional lookups,
 LVM records, callback types, and size-option literals. The subprocess forwarding

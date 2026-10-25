@@ -12,41 +12,7 @@ dev = [
   "molecule-plugins[docker]==26.7.15",
   "netaddr==1.3.0",
   "passlib==1.7.4",
-  "ruff==0.17.0",
-  "segno==1.6.6",
-  "ty==0.0.87",
-]
-
-[tool.ruff]
-target-version = "py312"
-include = [
-  "files/*.py",
-  "tests/*.py",
-  "pyproject.toml"
-]
-
-[tool.ruff.lint]
-select = [
-  "E4",
-  "E7",
-  "E9",
-  "F",
-  "I",
-  "ANN"
-]
-
-[tool.ruff.lint.flake8-annotations]
-# The subprocess wrappers intentionally forward the complete stdlib call signature.
-allow-star-arg-any = true
-
-[tool.ty.environment]
-python-version = "3.12"
-python-platform = "linux"
-
-[tool.ty.src]
-include = [
-  "files",
-  "tests"
+  "segno==1.6.6"
 ]
 
 [tool.uv]

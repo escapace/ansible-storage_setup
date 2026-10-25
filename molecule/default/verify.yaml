@@ -52,7 +52,7 @@
 
     - name: read configured volume group
       ansible.builtin.slurp:
-        src: /etc/filesystems.d/10-volume-group.conf
+        src: /etc/storage-setup.d/10-volume-group.conf
       register: storage_setup_config
 
     - name: verify persistent installation
@@ -67,7 +67,7 @@
 
     - name: create caller-owned configuration
       ansible.builtin.copy:
-        dest: /etc/filesystems.d/99-caller.conf
+        dest: /etc/storage-setup.d/99-caller.conf
         content: "# caller-owned configuration\n"
         mode: "0644"
 
@@ -83,7 +83,7 @@
 
     - name: inspect disabled configuration
       ansible.builtin.stat:
-        path: /etc/filesystems.d/10-volume-group.conf
+        path: /etc/storage-setup.d/10-volume-group.conf
       register: storage_setup_disabled
 
     - name: inspect removed device dependencies
@@ -98,7 +98,7 @@
 
     - name: inspect caller-owned configuration
       ansible.builtin.stat:
-        path: /etc/filesystems.d/99-caller.conf
+        path: /etc/storage-setup.d/99-caller.conf
       register: storage_setup_caller
 
     - name: verify empty configuration transition
@@ -118,7 +118,7 @@
 
     - name: read multiple device configuration
       ansible.builtin.slurp:
-        src: /etc/filesystems.d/10-volume-group.conf
+        src: /etc/storage-setup.d/10-volume-group.conf
       register: storage_setup_multiple
 
     - name: read multiple device dependencies
@@ -188,5 +188,5 @@
         path: "{{ item }}"
         state: absent
       loop:
-        - /etc/filesystems.d/99-caller.conf
+        - /etc/storage-setup.d/99-caller.conf
         - /etc/systemd/system/storage-setup.service.d/90-caller.conf

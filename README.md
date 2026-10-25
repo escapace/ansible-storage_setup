@@ -36,11 +36,16 @@ or reduce an existing volume group at the next boot.
       storage_setup_physical_device: /dev/vdb
 ```
 
-The role owns `/etc/filesystems.d/10-volume-group.conf`. Other `*.conf` files in
+The role owns `/etc/storage-setup.d/10-volume-group.conf`. Other `*.conf` files in
 that directory also feed the boot-time script and remain the caller's
 responsibility. Clearing the device variable does not delete existing LVM state
 or disable the service. It also removes the role-owned device dependency drop-in,
 `/etc/systemd/system/storage-setup.service.d/10-devices.conf`.
+
+On existing hosts, move caller-owned fragments from `/etc/filesystems.d/` to
+`/etc/storage-setup.d/` before the next service start or reboot. The role writes
+its own fragment at the new location; it does not migrate or read the old
+directory.
 
 The service waits for each configured disk's systemd `.device` unit and checks
 that each path names a block device before running. Missing disks fail the start

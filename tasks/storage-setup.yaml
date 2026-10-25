@@ -36,7 +36,7 @@
 - name: configure volume group
   ansible.builtin.template:
     src: volume-group.conf.j2
-    dest: /etc/filesystems.d/10-volume-group.conf
+    dest: /etc/storage-setup.d/10-volume-group.conf
     owner: root
     group: root
     mode: "0644"
@@ -44,6 +44,6 @@
 
 - name: remove disabled volume group configuration
   ansible.builtin.file:
-    path: /etc/filesystems.d/10-volume-group.conf
+    path: /etc/storage-setup.d/10-volume-group.conf
     state: absent
   when: storage_setup_physical_device | length == 0

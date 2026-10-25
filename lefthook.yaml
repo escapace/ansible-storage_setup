@@ -56,21 +56,6 @@ pre-commit:
       run: pnpm exec prettier --no-error-on-unmatched-pattern --ignore-unknown --write {staged_files}
       stage_fixed: true
 
-    ruff:
-      glob: '*.{py,toml}'
-      priority: 6
-      run: uv run ruff check && uv run ruff format --check
-
-    ty:
-      glob: '*.{py,toml}'
-      priority: 6
-      run: uv run ty check --error-on-warning
-
-    python-tests:
-      glob: '*.{py,toml}'
-      priority: 7
-      run: uv run python -W error tests/storage-setup.py
-
     ansible-lint:
       exclude:
         - pnpm-lock.yaml

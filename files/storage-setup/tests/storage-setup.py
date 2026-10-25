@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 SCRIPT = Path(
     os.environ.get("STORAGE_SETUP_SCRIPT")
-    or Path(__file__).resolve().parent.parent / "files" / "storage-setup.py"
+    or Path(__file__).resolve().parent.parent / "storage-setup.py"
 ).resolve()
 storage = types.ModuleType("storage_setup_under_test")
 exec(compile(SCRIPT.read_text(), str(SCRIPT), "exec"), storage.__dict__)
@@ -103,12 +103,12 @@ class ParsingTests(unittest.TestCase):
 
 
 @unittest.skipUnless(
-    os.environ.get("STORAGE_SETUP_TEST_CONFIG_DIRECTORY") == "/etc/filesystems.d",
+    os.environ.get("STORAGE_SETUP_TEST_CONFIG_DIRECTORY") == "/etc/storage-setup.d",
     "CLI tests require the dedicated container's empty configuration tmpfs",
 )
 class ScriptExecutionTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.config_directory = Path("/etc/filesystems.d")
+        self.config_directory = Path("/etc/storage-setup.d")
         self.assertEqual(self.config_directory.stat().st_uid, os.getuid())
         self.assertEqual(list(self.config_directory.iterdir()), [])
         self.temporary = tempfile.TemporaryDirectory()

@@ -362,7 +362,7 @@ def iterate_config(
 
 
 def main() -> None:
-    dir = "/etc/filesystems.d"
+    dir = "/etc/storage-setup.d"
 
     for each in sorted(os.listdir(dir)):
         cp = ConfigParser(interpolation=None)
