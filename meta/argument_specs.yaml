@@ -1,23 +1,5 @@
 ---
 argument_specs:
   main:
-    short_description: configure boot-time storage setup
-    options:
-      storage_setup_volume_group_name:
-        type: str
-        default: default
-        description:
-          - LVM volume group name, at most 128 characters.
-          - Accepts letters, digits, plus, underscore, dot and hyphen.
-          - Cannot start with a hyphen or be a single or double dot.
-      storage_setup_physical_device:
-        type: str
-        default: ""
-        description:
-          - Absolute /dev/ paths to disks reserved for this volume group.
-          - Separate paths with spaces or tabs, without surrounding whitespace.
-          - Paths accept letters, digits, underscore, dot, slash, colon, plus and hyphen.
-          - Dot and parent-directory path components are invalid.
-          - The service requires the corresponding udev-backed systemd device units at startup.
-          - An empty string removes the role-owned volume group configuration.
-          - Disks may be overwritten when storage setup runs at boot.
+    short_description: install boot-time storage provisioning for caller-owned fragments
+    options: {}

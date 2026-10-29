@@ -5,27 +5,6 @@
       - ansible_facts.get("os_family") == "RedHat"
     fail_msg: storage_setup requires a red hat family host with systemd and gathered facts.
 
-- name: validate storage configuration
-  ansible.builtin.assert:
-    that:
-      - storage_setup_volume_group_name is string
-      - storage_setup_volume_group_name is match('^[a-zA-Z0-9+_.][a-zA-Z0-9+_.-]{0,127}$')
-      - storage_setup_volume_group_name == storage_setup_volume_group_name | trim
-      - storage_setup_volume_group_name not in ['.', '..']
-      - storage_setup_physical_device is string
-      - storage_setup_physical_device == storage_setup_physical_device | trim
-      - >-
-        storage_setup_physical_device == '' or
-        storage_setup_physical_device is match('^/dev/[a-zA-Z0-9_./:+-]+(?:[ \t]+/dev/[a-zA-Z0-9_./:+-]+)*$')
-      - >-
-        storage_setup_physical_device.split()
-        | select('search', '(^|/)[.]{1,2}(/|$)')
-        | list | length == 0
-    fail_msg: >-
-      supply a valid lvm volume group name and either an empty device string or
-      whitespace-separated absolute /dev/ paths without shell metacharacters
-      or dot and parent-directory components.
-
 - name: observe systemd version
   ansible.builtin.command:
     argv: [systemctl, --version]
@@ -43,6 +22,3 @@
 
 - name: install storage setup
   ansible.builtin.import_tasks: install.yaml
-
-- name: configure storage setup
-  ansible.builtin.import_tasks: storage-setup.yaml

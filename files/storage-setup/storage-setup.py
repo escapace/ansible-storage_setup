@@ -1,381 +1,771 @@
 #!/usr/bin/env python3
+"""Validate caller-owned fragments, preflight external disks, then provision."""
+
 from __future__ import annotations
 
+import argparse
+import grp
+import math
 import os
+import pwd
 import re
+import shutil
+import stat
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Iterable, Iterator
-from configparser import ConfigParser, NoOptionError
-from contextlib import closing
-from typing import Any, Literal, NoReturn, TypeVar
+from collections.abc import Callable, Iterable
+from configparser import ConfigParser
+from configparser import Error as ConfigError
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal
 
-DMSETUP_CMD = "/usr/sbin/dmsetup"
-PVS_CMD = "/sbin/pvs"
-VGS_CMD = "/sbin/vgs"
-LVS_CMD = "/sbin/lvs"
-PVCREATE_CMD = "/sbin/pvcreate"
-VGCREATE_CMD = "/sbin/vgcreate"
-LVCREATE_CMD = "/sbin/lvcreate"
-VGEXTEND_CMD = "/sbin/vgextend"
-VGREDUCE_CMD = "/sbin/vgreduce"
-LVCONVERT_CMD = "/sbin/lvconvert"
-
-systemd_units: list[str] = []
-
-_Value = TypeVar("_Value")
-_Default = TypeVar("_Default")
+CONFIG_DIRECTORY = Path("/etc/storage-setup.d")
+DEVICE_TIMEOUT = 60.0
 
 
-def fail(*a: str) -> NoReturn:
-    sys.stderr.write("ERROR:" + " ".join(a) + "\n")
-    sys.exit(1)
+class SetupError(Exception):
+    """An actionable configuration, readiness, or storage conflict."""
 
 
-def safe_split(s: str) -> list[str]:
-    return [_f for _f in re.compile(r"\s+").split(s.strip()) if _f]
+@dataclass(frozen=True)
+class Field:
+    validate: Callable[[str], object]
+    default: str | None = None
 
 
-def optional(
-    call: Callable[[str, str], _Value],
-    sec: str,
-    opt: str,
-    default: _Default,
-) -> _Value | _Default:
-    try:
-        return call(sec, opt)
-    except NoOptionError:
-        return default
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise SetupError(message)
 
 
-def check_output(c: list[str], *a: Any, **kw: Any) -> str:
-    print("READ: ", c)
-    return subprocess.check_output(c, *a, **kw, encoding="utf-8")
-
-
-def check_call(c: list[str], *a: Any, **kw: Any) -> int:
-    print("EXEC: ", c)
-    return subprocess.check_call(c, *a, **kw)
-
-
-def mapper_device_name(dm_device: str) -> str:
-    dm_name = check_output(
-        [DMSETUP_CMD, "info", "-C", "--noheadings", "-o", "name", dm_device]
-    )
-    return "/dev/mapper/{}".format(dm_name.rstrip())
-
-
-def query_lvm(
-    mod: str, o: str = "all", extra: list[str] | None = None
-) -> Iterator[dict[str, str]]:
-    query = [
-        mod,
-        "--nameprefix",
-        "--noheadings",
-        "--unquoted",
-        "-o",
-        o,
-        "--separator",
-        ";",
-    ]
-    if extra:
-        query.extend(extra)
-    output = check_output(query)
-
-    def chunk(ch: str) -> tuple[str, str]:
-        k, v = ch.split("=")
-        return k.replace("LVM2_", "").lower(), v.strip()
-
-    for line in output.splitlines():
-        yield dict([chunk(each) for each in line.split(";")])
-
-
-def lvm_profile_dir() -> str:
-    return (
-        check_output(["lvm", "config", "config/profile_dir"])
-        .splitlines()[0]
-        .split("=")[1]
-        .replace('"', "")
+def name(value: str) -> None:
+    require(
+        re.fullmatch(r"[a-zA-Z0-9+_.][a-zA-Z0-9+_.-]{0,127}", value) is not None
+        and value not in (".", ".."),
+        "expected an LVM name of 1–128 characters, not starting with '-'",
     )
 
 
-def pvs() -> Iterator[dict[str, str]]:
-    for each in query_lvm(PVS_CMD, o="pv_all,vg_name"):
-        if each["pv_name"].startswith("/dev/dm-"):
-            each["pv_name"] = mapper_device_name(each["pv_name"])
-        yield each
-
-
-def vgs() -> Iterator[dict[str, str]]:
-    return query_lvm(VGS_CMD)
-
-
-def free_space(vg: str, units: str) -> int:
-    volume_group = find_this(
-        query_lvm(VGS_CMD, extra=["--nosuffix", "--units", units, vg]), "vg_name", vg
-    )
-    if volume_group is None:
-        # Preserve the existing failure policy for a missing volume group.
-        raise TypeError("'NoneType' object is not subscriptable")
-    return int(volume_group["vg_free"])
-
-
-def lvs(vg: str, units: str) -> Iterator[dict[str, str]]:
-    return query_lvm(LVS_CMD, extra=["--units", units, vg])
-
-
-def find_this(
-    lst: Iterable[dict[str, str]], key: str, val: str
-) -> dict[str, str] | None:
-    for each in lst:
-        if each[key] == val:
-            return each
-
-
-def device_name(name: str) -> str:
-    return check_output(
-        [
-            "bash",
-            "-c",
-            "udevadm info --query=property --name={} | grep DEVNAME= | cut -d= -f2-".format(
-                name
-            ),
-        ]
-    ).strip()
-
-
-def process_vg(sec: str, params: ConfigParser) -> None:
-    name = params.get(sec, "name")
-    _force = optional(params.getboolean, sec, "force", False)
-    pesize = optional(params.getint, sec, "pesize", 4)
-    vgoptions = safe_split(optional(params.get, sec, "options", ""))
-
-    # split and check for symlinks
-    dev_list = set(
-        map(device_name, map(os.path.realpath, safe_split(params.get(sec, "devices"))))
-    )
-
-    current_devs: set[str] = set()
-
-    for test_dev in dev_list:
-        wait_for_device(test_dev)
-
-    # check for device files
-    for test_dev in dev_list:
-        if not os.path.exists(test_dev):
-            fail("Device not found: {}".format(test_dev))
-
-    # check pv for already used devices
-    for each in pvs():
-        if each["pv_name"] in dev_list and each["vg_name"] != name:
-            fail(
-                "Device {} is already in {} volume group.".format(
-                    each["pv_name"], each["vg_name"]
-                )
+def volume_name(value: str) -> None:
+    name(value)
+    require(
+        not value.startswith(("snapshot", "pvmove"))
+        and not any(
+            part in value
+            for part in (
+                "_cdata",
+                "_cmeta",
+                "_corig",
+                "_mimage",
+                "_mlog",
+                "_pmspare",
+                "_rimage",
+                "_rmeta",
+                "_tdata",
+                "_tmeta",
+                "_vorigin",
+                "_vdata",
+                "_vpool",
             )
-        if each["vg_name"] == name:
-            current_devs.add(os.path.realpath(each["pv_name"]))
+        ),
+        "reserved LVM logical volume name",
+    )
 
-    this = find_this(vgs(), "vg_name", name)
 
-    if this:
-        devs_to_remove = current_devs - dev_list
-        devs_to_add = dev_list - current_devs
+def absolute_path(value: str) -> None:
+    require(
+        re.fullmatch(r"/[a-zA-Z0-9_./:+-]+", value) is not None
+        and os.path.normpath(value) == value
+        and not value.startswith("//")
+        and value != "/",
+        "expected a normalized absolute path without whitespace or shell metacharacters",
+    )
 
-        for each in devs_to_add:
-            check_call([PVCREATE_CMD, "-ff", "-y", each])
-            check_call([VGEXTEND_CMD, "-f", "-y", name, each])
-        for each in devs_to_remove:
-            check_call([VGREDUCE_CMD, name, each])
 
-    else:
-        check_call(
-            [VGCREATE_CMD, "-f", "-y", "-Zy"]
-            + vgoptions
-            + ["-s", str(pesize), name]
-            + list(dev_list)
+def device_path(value: str) -> None:
+    absolute_path(value)
+    require(value.startswith("/dev/"), "expected a path below /dev/")
+
+
+def devices(value: str) -> None:
+    paths = value.split()
+    require(bool(paths), "expected at least one physical device")
+    for path in paths:
+        device_path(path)
+    require(len(paths) == len(set(paths)), "duplicate physical device")
+
+
+def extent_size(value: str) -> None:
+    require(
+        value.isascii() and value.isdigit(), "expected an integer extent size in MiB"
+    )
+    size = int(value)
+    require(
+        1 <= size <= 16384 and size & (size - 1) == 0,
+        "extent size must be a power of two from 1 to 16384 MiB",
+    )
+
+
+def parse_size(value: str) -> tuple[str, Literal["-L", "-l"]]:
+    match = re.fullmatch(r"([0-9]+)%(PVS|VG|FREE)", value)
+    if match:
+        require(1 <= int(match[1]) <= 100, "size percentage must be from 1 to 100")
+        return value, "-l"
+    match = re.fullmatch(r"([0-9]+)([bskmgtpe])b?", value, re.IGNORECASE)
+    if match:
+        require(int(match[1]) > 0, "size must be positive")
+        return match[1] + match[2].lower(), "-L"
+    require(
+        re.fullmatch(r"[0-9]+", value) is not None and int(value) > 0,
+        "expected a positive LVM size or percentage",
+    )
+    return value + "m", "-L"
+
+
+def boolean(value: str) -> None:
+    require(value.lower() in ConfigParser.BOOLEAN_STATES, "expected a boolean")
+
+
+def filesystem_type(value: str) -> None:
+    require(
+        re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]*", value) is not None,
+        "invalid filesystem type",
+    )
+
+
+def account(value: str, *, group: bool = False) -> None:
+    if not value:
+        return
+    if value.isascii() and value.isdigit():
+        require(int(value) < 2**32 - 1, "account ID is out of range")
+        return
+    try:
+        if group:
+            grp.getgrnam(value)
+        else:
+            pwd.getpwnam(value)
+    except KeyError as error:
+        raise SetupError(f"unknown {'group' if group else 'user'}: {value}") from error
+
+
+def group_account(value: str) -> None:
+    account(value, group=True)
+
+
+def mode(value: str) -> None:
+    require(
+        not value or re.fullmatch(r"[0-7]{3,4}", value) is not None,
+        "expected a three- or four-digit octal mode",
+    )
+
+
+def optional_path(value: str) -> None:
+    if value:
+        absolute_path(value)
+
+
+def units(value: str) -> None:
+    for unit in value.split():
+        require(
+            re.fullmatch(r"[a-zA-Z0-9_][a-zA-Z0-9_.@:-]*\.(service|target|mount)", unit)
+            is not None,
+            f"invalid unit name: {unit}",
         )
 
 
-pct_re = re.compile(r"^(\d+)%(PVS|VG|FREE)$")
-size_re = re.compile(r"^(\d+)([bskmgtpe])b?$")
+# Required fields have no default. This is the authoritative option/default table.
+SCHEMA = {
+    "group": {
+        "name": Field(name),
+        "devices": Field(devices),
+        "pesize": Field(extent_size, "4"),
+    },
+    "volume": {
+        "volume": Field(volume_name),
+        "group": Field(name),
+        "size": Field(parse_size),
+    },
+    "filesystem": {
+        "dev": Field(device_path),
+        "fstype": Field(filesystem_type),
+        "mount": Field(optional_path, ""),
+        "user": Field(account, ""),
+        "group": Field(group_account, ""),
+        "mode": Field(mode, ""),
+        "wanted_by": Field(units, ""),
+        "required_by": Field(units, ""),
+    },
+    "write": {
+        "file": Field(absolute_path),
+        "content": Field(str),
+        "crlf": Field(boolean, "true"),
+    },
+}
 
 
-def parse_size(size: str | None) -> tuple[int | str, Literal["L", "l"], str]:
-    if size:
-        m = pct_re.match(size)
-        if m:
-            if int(m.group(1)) > 100:
-                fail("Size percentage cannot be larger than 100%")
-            return size, "l", ""
-        m = size_re.match(size.lower())
-        if m:
-            return int(m.group(1)), "L", m.group(2)
-        if size.isdigit():
-            return size, "L", "m"
-        fail("Bad size specification")
-    fail("size not specified")
+def sections(config: ConfigParser, kind: str) -> list[str]:
+    return sorted(
+        section for section in config.sections() if section.startswith(kind + ":")
+    )
 
 
-def wait_for_device(dev: str) -> None:
-    check_call(["pvscan", "--cache", "-aay"])
-    check_call(["vgscan", "--mknodes", "-v"])
-    check_call(["vgchange", "-a", "y"])
-    check_call(["udevadm", "trigger", "--action=add", "--subsystem-match=block"])
-    # check_call(["udevadm", "settle"])
-
-    print("--> Wait for device {}".format(dev))
-    for sec in range(0, 60):
-        if os.path.exists(dev):
-            print("--> Device {} appears in {} seconds".format(dev, sec))
-            break
-        time.sleep(1)
+def volume_devices(config: ConfigParser, section: str) -> set[str]:
+    group = config.get(section, "group")
+    volume = config.get(section, "volume")
+    return {
+        f"/dev/{group}/{volume}",
+        f"/dev/mapper/{group.replace('-', '--')}-{volume.replace('-', '--')}",
+    }
 
 
-def process_volume(sec: str, params: ConfigParser) -> None:
-    lv = params.get(sec, "volume")
-    vg = params.get(sec, "group")
-    size: str | int = params.get(sec, "size")
-    _force = optional(params.getboolean, sec, "force", False)
-    size, size_opt, size_unit = parse_size(size)
-
-    this = find_this(lvs(vg, size_opt == "l" and "m" or size_unit), "lv_name", lv)
-
-    if not this:
-        print("--> Create volume {}".format(lv))
-        check_call([LVCREATE_CMD, "-n", lv, "-" + size_opt, str(size) + size_unit, vg])
-    else:
-        print("--> Do nothing. Volume {} already exists".format(lv))
+def generated_devices(config: ConfigParser) -> set[str]:
+    return {
+        path
+        for section in sections(config, "volume")
+        for path in volume_devices(config, section)
+    }
 
 
-UNIT_TEMPLATE = """[Unit]
-Before=local-fs.target {before}
+def load_config(directory: Path) -> ConfigParser:
+    config = ConfigParser(interpolation=None)
+    sources: dict[str, Path] = {}
+    for path in sorted(directory.iterdir()):
+        if path.suffix != ".conf":
+            continue
+        fragment = ConfigParser(interpolation=None)
+        try:
+            require(path.is_file(), "configuration fragment must be a regular file")
+            with path.open(encoding="utf-8") as stream:
+                fragment.read_file(stream)
+            require(not fragment.defaults(), "[DEFAULT] is not supported")
+            for section in fragment.sections():
+                kind, separator, label = section.partition(":")
+                require(
+                    separator == ":"
+                    and kind in SCHEMA
+                    and re.fullmatch(r"[a-zA-Z0-9_.+-]+", label) is not None,
+                    f"invalid section: {section}",
+                )
+                require(
+                    section not in sources,
+                    f"duplicate section {section}; first defined in {sources.get(section)}",
+                )
+                fields = SCHEMA[kind]
+                require(
+                    not (fragment[section].keys() - fields.keys()),
+                    f"{section}: unknown options: {sorted(fragment[section].keys() - fields.keys())}",
+                )
+                config.add_section(section)
+                sources[section] = path
+                for option, field in fields.items():
+                    value = fragment.get(section, option, fallback=field.default)
+                    if value is None:
+                        raise SetupError(f"{section}: missing {option}")
+                    try:
+                        field.validate(value)
+                    except (SetupError, ValueError) as error:
+                        raise SetupError(f"{section}.{option}: {error}") from error
+                    config.set(section, option, value)
+        except (OSError, UnicodeError, ConfigError, SetupError) as error:
+            raise SetupError(f"{path}: {error}") from error
 
-[Mount]
-What={what}
-Where={where}
-Type={type}
+    def unique(keys: Iterable[tuple[str, str]], resource: str) -> None:
+        owners: dict[str, str] = {}
+        for key, section in keys:
+            require(
+                key not in owners,
+                f"{sources[section]}: {section}: duplicate {resource} {key}; "
+                f"also owned by {owners.get(key)}",
+            )
+            owners[key] = section
 
-[Install]
-WantedBy=local-fs.target {wanted_by}
-RequiredBy={required_by}
-"""
+    unique(
+        ((config.get(s, "name"), s) for s in sections(config, "group")), "volume group"
+    )
+    unique(
+        (
+            (f"{config.get(s, 'group')}/{config.get(s, 'volume')}", s)
+            for s in sections(config, "volume")
+        ),
+        "logical volume",
+    )
+    unique(
+        ((config.get(s, "dev"), s) for s in sections(config, "filesystem")),
+        "filesystem device",
+    )
+    unique(
+        (
+            (os.path.realpath(config.get(s, "mount")), s)
+            for s in sections(config, "filesystem")
+            if config.get(s, "mount")
+        ),
+        "mount path",
+    )
+    unique(
+        (
+            (os.path.realpath(config.get(s, "file")), s)
+            for s in sections(config, "write")
+        ),
+        "output file",
+    )
+    unique(
+        (
+            (device, s)
+            for s in sections(config, "group")
+            for device in config.get(s, "devices").split()
+        ),
+        "physical device",
+    )
+    groups = {config.get(s, "name") for s in sections(config, "group")}
+    for section in sections(config, "volume"):
+        require(
+            config.get(section, "group") in groups,
+            f"{sources[section]}: {section}: group must be defined in the configuration",
+        )
+    physical = {
+        device
+        for section in sections(config, "group")
+        for device in config.get(section, "devices").split()
+    }
+    require(
+        not physical.intersection(generated_devices(config)),
+        "physical devices cannot be logical volumes created by this configuration",
+    )
+    filesystem_devices = {config.get(s, "dev") for s in sections(config, "filesystem")}
+    require(
+        not physical.intersection(filesystem_devices),
+        "a physical device cannot also have a filesystem definition",
+    )
+    for section in sections(config, "volume"):
+        require(
+            len(filesystem_devices.intersection(volume_devices(config, section))) <= 1,
+            f"{sources[section]}: {section}: multiple filesystem definitions for one logical volume",
+        )
+    for section in sections(config, "filesystem"):
+        if not config.get(section, "mount"):
+            require(
+                not any(
+                    config.get(section, key)
+                    for key in ("user", "group", "mode", "wanted_by", "required_by")
+                ),
+                f"{sources[section]}: {section}: mount options require a mount path",
+            )
+    return config
 
 
-def process_fs(sec: str, params: ConfigParser) -> None:
-    dev = params.get(sec, "dev")
-    if not params.has_option(sec, "fstype"):
-        return
+def check_output(command: list[str]) -> str:
+    print("READ:", command, flush=True)
+    return subprocess.check_output(command, text=True, stdin=subprocess.DEVNULL)
 
-    fstype = params.get(sec, "fstype")
 
-    wait_for_device(dev)
+def check_call(command: list[str]) -> None:
+    print("EXEC:", command, flush=True)
+    subprocess.run(command, check=True, stdin=subprocess.DEVNULL)
+
+
+def query_lvm(command: str, fields: str) -> list[dict[str, str]]:
+    output = check_output([command, "--noheadings", "--separator", ";", "-o", fields])
+    keys = fields.split(",")
+    records = []
+    for line in output.splitlines():
+        values = [value.strip() for value in line.split(";")]
+        require(len(values) == len(keys), f"{command}: malformed LVM output: {line!r}")
+        for key, value in zip(keys, values, strict=True):
+            require(
+                bool(value) or (command == "pvs" and key == "vg_name"),
+                f"{command}: empty {key} in LVM output: {line!r}",
+            )
+        records.append(dict(zip(keys, values, strict=True)))
+    return records
+
+
+def block_identity(path: str) -> int:
+    info = os.stat(path)
+    require(stat.S_ISBLK(info.st_mode), f"not a block device: {path}")
+    return info.st_rdev
+
+
+def wait_for_devices(paths: Iterable[str], timeout: float) -> None:
+    require(
+        math.isfinite(timeout) and timeout >= 0,
+        "device timeout must be finite and nonnegative",
+    )
+    pending = set(paths)
+    deadline = time.monotonic() + timeout
+    while pending:
+        for path in sorted(pending):
+            try:
+                block_identity(path)
+            except FileNotFoundError:
+                continue
+            pending.remove(path)
+        if not pending:
+            return
+        remaining = deadline - time.monotonic()
+        require(
+            remaining > 0,
+            f"timed out waiting for block devices: {', '.join(sorted(pending))}",
+        )
+        time.sleep(min(1.0, remaining))
+
+
+def signatures(device: str) -> dict[str, str]:
+    # blkid exit 2 means unidentified, not necessarily readable (for example an
+    # unbacked device). Establish readability before treating that result as blank.
     try:
-        exist_fs = check_output(
-            ["blkid", "-c", "/dev/null", "-o", "value", "-s", "TYPE", dev]
-        ).strip()
-    except subprocess.CalledProcessError:
-        exist_fs = ""
+        with Path(device).open("rb") as stream:
+            header = stream.read(512)
+    except OSError as error:
+        raise SetupError(f"{device}: cannot read device header: {error}") from error
+    require(len(header) == 512, f"{device}: cannot read a complete device sector")
+    command = ["blkid", "-p", "-o", "export", device]
+    print("READ:", command, flush=True)
+    result = subprocess.run(
+        command, capture_output=True, text=True, stdin=subprocess.DEVNULL
+    )
+    if result.returncode == 2 and not result.stdout and not result.stderr:
+        return {}
+    require(
+        result.returncode == 0 and bool(result.stdout) and not result.stderr,
+        f"blkid failed for {device} (exit {result.returncode}): {result.stderr.strip()}",
+    )
+    properties = {}
+    for line in result.stdout.splitlines():
+        key, separator, value = line.partition("=")
+        require(
+            separator == "=" and key not in properties,
+            f"malformed blkid output for {device}: {line!r}",
+        )
+        properties[key] = value
+    return properties
 
-    # FIXME: should we stop, if it contain FS of different type?
-    if exist_fs != fstype:
-        print("--> Formatting filesystem {} with {}".format(dev, fstype))
-        check_call(["mkfs", "-t", fstype, dev])
-    else:
-        print("--> Do nothing. Filesystem {} already formatted".format(dev))
 
-    if params.has_option(sec, "mount"):
-        print("--> Create mount for {}".format(dev))
-        mount = params.get(sec, "mount")
-        mountname = mount.lstrip("/").replace("/", "-")
-        unit = "{}.mount".format(mountname)
-        unitfile = os.path.join("/etc/systemd/system/", unit)
+def check_filesystem(device: str, fstype: str) -> bool:
+    properties = signatures(device)
+    if not properties:
+        return False
+    require(
+        properties.get("TYPE") == fstype
+        and properties.get("USAGE") == "filesystem"
+        and not any(key.startswith("PT") for key in properties),
+        f"{device}: existing signature does not match requested filesystem {fstype}: {properties}",
+    )
+    return True
 
-        required_by = safe_split(optional(params.get, sec, "required_by", ""))
-        wanted_by = safe_split(optional(params.get, sec, "wanted_by", ""))
 
-        user = optional(params.get, sec, "user", False)
-        group = optional(params.get, sec, "group", False)
-        mode = optional(params.get, sec, "mode", False)
+def mount_unit(mount: str) -> str:
+    unit = check_output(["systemd-escape", "--path", "--suffix=mount", mount]).strip()
+    require(
+        unit.endswith(".mount") and "/" not in unit and "\n" not in unit,
+        "invalid escaped mount unit",
+    )
+    return unit
 
-        if not os.path.exists(unitfile):
-            if not os.path.ismount(mount):
-                check_call(["mount", dev, mount, "-t", fstype])
-                check_call(
-                    ["bash", "-c", "selinuxenabled && restorecon -R " + mount, "| true"]
+
+def preflight_outputs(config: ConfigParser) -> None:
+    write_paths = {
+        os.path.realpath(config.get(s, "file")) for s in sections(config, "write")
+    }
+    for section in sections(config, "write"):
+        path = Path(config.get(section, "file"))
+        require(
+            path.is_file()
+            if path.exists() or path.is_symlink()
+            else path.parent.is_dir(),
+            f"{section}: output must be a regular file or have an existing parent directory: {path}",
+        )
+    for section in sections(config, "filesystem"):
+        formatter = "mkfs." + config.get(section, "fstype")
+        require(
+            shutil.which(formatter) is not None,
+            f"{section}: missing formatter: {formatter}",
+        )
+        mount = config.get(section, "mount")
+        if not mount:
+            continue
+        require(
+            Path(mount).is_dir(), f"{section}: mount directory does not exist: {mount}"
+        )
+        device = config.get(section, "dev")
+        if os.path.ismount(mount):
+            source = check_output(
+                [
+                    "findmnt",
+                    "--noheadings",
+                    "--raw",
+                    "--output",
+                    "SOURCE",
+                    "--mountpoint",
+                    mount,
+                ]
+            ).strip()
+            require(
+                block_identity(source) == block_identity(device),
+                f"{section}: mount path is occupied by another device: {source}",
+            )
+        unitfile = Path("/etc/systemd/system") / mount_unit(mount)
+        require(
+            os.path.realpath(unitfile) not in write_paths,
+            f"{section}: mount unit is also a write destination: {unitfile}",
+        )
+        if unitfile.exists():
+            existing = ConfigParser(interpolation=None, strict=False)
+            try:
+                with unitfile.open(encoding="utf-8") as stream:
+                    existing.read_file(stream)
+            except (OSError, UnicodeError, ConfigError) as error:
+                raise SetupError(f"{unitfile}: {error}") from error
+            require(
+                existing.get("Mount", "Where", fallback="") == mount
+                and existing.get("Mount", "Type", fallback="")
+                == config.get(section, "fstype")
+                and os.path.realpath(existing.get("Mount", "What", fallback=""))
+                == os.path.realpath(device),
+                f"{section}: existing mount unit conflicts with configuration: {unitfile}",
+            )
+
+
+def preflight(config: ConfigParser, timeout: float) -> None:
+    """Check external inputs without mutation; retain caller-selected stable paths."""
+    physical = {
+        path
+        for section in sections(config, "group")
+        for path in config.get(section, "devices").split()
+    }
+    generated = generated_devices(config)
+    filesystem_devices = {config.get(s, "dev") for s in sections(config, "filesystem")}
+    wait_for_devices(physical | (filesystem_devices - generated), timeout)
+    preflight_outputs(config)
+    claims: dict[int, str] = {}
+    for section in sections(config, "group"):
+        for path in config.get(section, "devices").split():
+            identity = block_identity(path)
+            require(
+                identity not in claims,
+                f"{section}: {path} aliases a physical device owned by {claims.get(identity)}",
+            )
+            claims[identity] = section
+    fs_claims: dict[int, str] = {}
+    for section in sections(config, "filesystem"):
+        device = config.get(section, "dev")
+        try:
+            identity = block_identity(device)
+        except FileNotFoundError:
+            require(device in generated, f"{section}: device disappeared: {device}")
+            continue
+        require(
+            identity not in claims,
+            f"{section}: filesystem device is also a physical device",
+        )
+        require(
+            identity not in fs_claims,
+            f"{section}: filesystem aliases the device owned by {fs_claims.get(identity)}",
+        )
+        fs_claims[identity] = section
+        check_filesystem(device, config.get(section, "fstype"))
+    if physical:
+        records = query_lvm("pvs", "pv_name,vg_name")
+        existing: dict[int, str] = {}
+        managed_groups = {config.get(s, "name") for s in sections(config, "group")}
+        for record in records:
+            try:
+                identity = block_identity(record["pv_name"])
+            except FileNotFoundError:
+                require(
+                    record["vg_name"] not in managed_groups,
+                    f"missing existing PV in managed group: {record}",
+                )
+                continue  # Unrelated missing PVs are not managed by this run.
+            require(
+                identity not in existing,
+                f"duplicate PV identity in LVM output: {record}",
+            )
+            existing[identity] = record["vg_name"]
+        for identity, section in claims.items():
+            group = config.get(section, "name")
+            require(
+                existing.get(identity, "") in ("", group),
+                f"{section}: physical device belongs to volume group {existing.get(identity)}",
+            )
+        for path in sorted(physical):
+            properties = signatures(path)
+            if block_identity(path) in existing:
+                require(
+                    properties.get("TYPE") == "LVM2_member",
+                    f"{path}: PV metadata and disk signature disagree",
+                )
+            else:
+                require(
+                    not properties,
+                    f"{path}: refusing to overwrite existing signatures: {properties}",
                 )
 
-                if isinstance(user, str):
-                    check_call(["chown", user, mount])
 
-                if isinstance(group, str):
-                    check_call(["chgrp", group, mount])
+def process_vg(section: str, config: ConfigParser) -> None:
+    group = config.get(section, "name")
+    paths = config.get(section, "devices").split()
+    desired = {block_identity(path): path for path in paths}
+    require(
+        len(desired) == len(paths),
+        f"{section}: physical device identities changed since preflight",
+    )
+    records = query_lvm("pvs", "pv_name,vg_name")
+    current: dict[int, str] = {}
+    initialized: set[int] = set()
+    for record in records:
+        try:
+            identity = block_identity(record["pv_name"])
+        except FileNotFoundError:
+            require(record["vg_name"] != group, f"missing existing PV: {record}")
+            continue
+        initialized.add(identity)
+        if identity in desired:
+            require(
+                record["vg_name"] in ("", group),
+                f"{desired[identity]}: PV ownership changed since preflight",
+            )
+        if record["vg_name"] == group:
+            current[identity] = record["pv_name"]
+    groups = {r["vg_name"] for r in query_lvm("vgs", "vg_name")}
+    for identity in desired.keys() - initialized:
+        device = desired[identity]
+        require(not signatures(device), f"{device}: signatures changed since preflight")
+    if group not in groups:
+        require(
+            not current, f"{section}: volume group metadata changed since preflight"
+        )
+        check_call(
+            [
+                "vgcreate",
+                "-s",
+                config.get(section, "pesize") + "m",
+                group,
+                *sorted(desired.values()),
+            ]
+        )
+        return
+    for identity in sorted(desired.keys() - current.keys()):
+        device = desired[identity]
+        if identity not in initialized:
+            check_call(["pvcreate", device])
+        check_call(["vgextend", group, device])
+    for identity in sorted(current.keys() - desired.keys()):
+        check_call(["vgreduce", group, current[identity]])
 
-                if isinstance(mode, str):
-                    check_call(["chmod", mode, mount])
 
+def process_volume(section: str, config: ConfigParser) -> None:
+    group = config.get(section, "group")
+    volume = config.get(section, "volume")
+    records = query_lvm("lvs", "vg_name,lv_name")
+    if any(r["vg_name"] == group and r["lv_name"] == volume for r in records):
+        return
+    size, option = parse_size(config.get(section, "size"))
+    check_call(["lvcreate", "-n", volume, option, size, group])
+
+
+def restore_labels(mount: str) -> None:
+    result = subprocess.run(["selinuxenabled"], stdin=subprocess.DEVNULL, check=False)
+    require(
+        result.returncode in (0, 1),
+        f"selinuxenabled failed with exit {result.returncode}",
+    )
+    if result.returncode == 0:
+        check_call(["restorecon", "-R", mount])
+
+
+def process_fs(section: str, config: ConfigParser, timeout: float) -> None:
+    device = config.get(section, "dev")
+    fstype = config.get(section, "fstype")
+    wait_for_devices([device], timeout)
+    if not check_filesystem(device, fstype):
+        check_call(["mkfs", "-t", fstype, device])
+    mount = config.get(section, "mount")
+    if not mount:
+        return
+    unit = mount_unit(mount)
+    unitfile = Path("/etc/systemd/system") / unit
+    if not unitfile.exists():
+        if not os.path.ismount(mount):
+            check_call(["mount", device, mount, "-t", fstype])
+            try:
+                restore_labels(mount)
+                for option, command in (
+                    ("user", "chown"),
+                    ("group", "chgrp"),
+                    ("mode", "chmod"),
+                ):
+                    value = config.get(section, option)
+                    if value:
+                        check_call([command, value, mount])
+            finally:
                 check_call(["umount", mount])
-            with closing(open(unitfile, "w")) as f:
-                print("--> Writing {}".format(unitfile))
-                f.write(
-                    UNIT_TEMPLATE.format(
-                        what=dev,
-                        where=mount,
-                        type=fstype,
-                        wanted_by=" ".join(wanted_by),
-                        required_by=" ".join(required_by),
-                        before=" ".join(wanted_by + required_by),
-                    )
-                )
-
-            check_call(["chmod", "644", unitfile])
-            check_call(["systemctl", "daemon-reload"])
-        else:
-            print("--> Not writing {}, it already exists".format(unitfile))
-
-        # check_call(["systemctl", "enable", unit])
-        check_call(["systemctl", "start", unit])
-    else:
-        print("--> Not mounting {}".format(dev))
+        wanted_by = " ".join(config.get(section, "wanted_by").split())
+        required_by = " ".join(config.get(section, "required_by").split())
+        unitfile.write_text(
+            f"[Unit]\nBefore={wanted_by} {required_by}\n\n"
+            f"[Mount]\nWhat={device}\nWhere={mount}\nType={fstype}\n\n"
+            f"[Install]\nWantedBy={wanted_by}\n"
+            f"RequiredBy={required_by}\n",
+            encoding="utf-8",
+        )
+        unitfile.chmod(0o644)
+        check_call(["systemctl", "daemon-reload"])
+    check_call(["systemctl", "start", unit])
 
 
-def write_file(sec: str, params: ConfigParser) -> None:
-    filename = params.get(sec, "file")
-    content = params.get(sec, "content")
-    crlf = optional(params.getboolean, sec, "crlf", True)
-
-    if not os.path.exists(filename):
-        with closing(open(filename, "w")) as f:
-            print("WRITE: " + filename)
-            f.write(content)
-            if crlf:
-                f.write("\n")
+def write_file(section: str, config: ConfigParser) -> None:
+    path = Path(config.get(section, "file"))
+    if path.exists():
+        return
+    content = config.get(section, "content")
+    if config.getboolean(section, "crlf"):
+        content += "\n"
+    with path.open("x", encoding="utf-8") as stream:
+        stream.write(content)
 
 
-def iterate_config(
-    prefix: str, fun: Callable[[str, ConfigParser], None], cp: ConfigParser
-) -> None:
-    for each in sorted(cp.sections()):
-        if each.startswith(prefix):
-            fun(each, cp)
+def execute(config: ConfigParser, timeout: float) -> None:
+    preflight(config, timeout)
+    for section in sections(config, "group"):
+        process_vg(section, config)
+    for section in sections(config, "volume"):
+        process_volume(section, config)
+    for section in sections(config, "filesystem"):
+        process_fs(section, config, timeout)
+    for section in sections(config, "write"):
+        write_file(section, config)
 
 
-def main() -> None:
-    dir = "/etc/storage-setup.d"
-
-    for each in sorted(os.listdir(dir)):
-        cp = ConfigParser(interpolation=None)
-        fn = os.path.join(dir, each)
-        print("==> Processing: " + fn)
-        cp.read(fn)
-        iterate_config("group", process_vg, cp)
-        iterate_config("volume", process_volume, cp)
-        iterate_config("filesystem", process_fs, cp)
-        iterate_config("write", write_file, cp)
-
-    print("==> ALL DONE!")
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--validate",
+        action="store_true",
+        help="validate fragments without accessing disks",
+    )
+    parser.add_argument(
+        "--device-timeout",
+        type=float,
+        default=DEVICE_TIMEOUT,
+        help="seconds to wait for external disks together, and for each created filesystem device (default: 60)",
+    )
+    args = parser.parse_args()
+    try:
+        require(
+            math.isfinite(args.device_timeout) and args.device_timeout >= 0,
+            "device timeout must be finite and nonnegative",
+        )
+        config = load_config(CONFIG_DIRECTORY)
+        if not args.validate:
+            execute(config, args.device_timeout)
+        print("==> ALL DONE!", flush=True)
+        return 0
+    except (SetupError, OSError, subprocess.CalledProcessError) as error:
+        print(f"ERROR: {error}", file=sys.stderr, flush=True)
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

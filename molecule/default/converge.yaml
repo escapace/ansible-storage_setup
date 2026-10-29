@@ -8,4 +8,26 @@
         state: present
   roles:
     - role: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | basename }}"
-      storage_setup_physical_device: /dev/something
+  post_tasks:
+    - name: configure independent caller-owned volume groups
+      ansible.builtin.copy:
+        dest: "/etc/storage-setup.d/{{ item.filename }}"
+        content: "{{ item.content }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - filename: 20-data.conf
+          content: |
+            [group:data]
+            name = data
+            devices = /dev/disk/by-id/example-data
+            [volume:database]
+            group = data
+            volume = database
+            size = 1g
+        - filename: 30-logs.conf
+          content: |
+            [group:logs]
+            name = logs
+            devices = /dev/disk/by-id/example-logs

@@ -1,10 +1,30 @@
 ---
 - name: install storage setup packages
   ansible.builtin.package:
-    name: [device-mapper-libs, xfsprogs, lvm2, python3, systemd-udev]
+    name:
+      - device-mapper-libs
+      - xfsprogs
+      - lvm2
+      - python3
+      - systemd-udev
+      - util-linux
+      - libselinux-utils
+      - policycoreutils
     state: present
 
-- name: install partitioner script
+- name: validate storage setup python runtime
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - >-
+        import sys;
+        sys.exit(0 if sys.version_info >= (3, 10) else
+        'storage-setup requires Python 3.10 or newer')
+  changed_when: false
+  check_mode: false
+
+- name: install storage setup script
   ansible.builtin.copy:
     src: storage-setup/storage-setup.py
     dest: /usr/bin/storage-setup
@@ -12,7 +32,7 @@
     group: root
     mode: "0755"
 
-- name: install partitioner service
+- name: install storage setup service
   ansible.builtin.copy:
     src: storage-setup.service
     dest: /usr/lib/systemd/system/storage-setup.service

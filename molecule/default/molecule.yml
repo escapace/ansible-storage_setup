@@ -1,5 +1,9 @@
 ---
 prerun: false
+scenario:
+  # Only schedule actions with playbooks; no prepare/cleanup/side-effect hooks exist.
+  test_sequence: [dependency, destroy, syntax, create, converge, idempotence, verify, destroy]
+  check_sequence: [dependency, destroy, syntax, create, converge, check, destroy]
 ansible:
   cfg:
     defaults:
@@ -17,7 +21,7 @@ dependency:
 driver:
   name: docker
 platforms:
-  - name: instance
+  - name: storage-setup-instance
     image: quay.io/centos/centos:stream10
     pre_build_image: true
 provisioner:
