@@ -1,26 +1,11 @@
 // @ts-check
 
-import { escapace, compose } from 'eslint-config-escapace'
+import { defineConfig as compose } from 'eslint/config'
+import { escapace } from 'oxlint-config-escapace/eslint'
 
-export default compose(
-  escapace(),
-  {
-    files: [
-      'defaults/**/*.{yml,yaml}',
-      'handlers/**/*.{yml,yaml}',
-      'meta/**/*.{yml,yaml}',
-      'molecule/**/*.{yml,yaml}',
-      'tasks/**/*.{yml,yaml}',
-      'vars/**/*.{yml,yaml}',
-    ],
-    rules: {
-      'yaml/sort-keys': 'off',
-    },
+export default compose(escapace(), {
+  files: ['**/molecule.yml'],
+  rules: {
+    'yaml/file-extension': 'off',
   },
-  {
-    files: ['**/molecule.yml'],
-    rules: {
-      'yaml/file-extension': 'off',
-    },
-  },
-)
+})

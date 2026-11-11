@@ -1,15 +1,15 @@
 ---
 - name: storage_setup observe systemd runtime
+  listen: storage_setup daemon-reload
+
   ansible.builtin.stat:
     path: /run/systemd/system
   register: storage_setup_systemd_runtime
-  listen: storage_setup daemon-reload
-
 - name: storage_setup reload systemd manager
+  listen: storage_setup daemon-reload
   ansible.builtin.systemd_service:
     daemon_reload: true
   when:
     - not ansible_check_mode
     - ansible_facts.get("service_mgr") == "systemd"
     - storage_setup_systemd_runtime.stat.isdir | default(false)
-  listen: storage_setup daemon-reload

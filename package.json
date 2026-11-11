@@ -12,17 +12,21 @@
     "@escapace/syncpack-configuration": "0.3.0",
     "@ls-lint/ls-lint": "2.3.1",
     "eslint": "10.10.0",
-    "eslint-config-escapace": "5.20.4",
     "lefthook": "2.1.12",
-    "prettier": "3.9.6",
-    "prettier-config-escapace": "1.2.2",
+    "oxfmt": "0.76.0",
+    "oxlint-config-escapace": "0.2.0",
     "syncpack": "15.3.3"
   },
   "devEngines": {
     "packageManager": {
       "name": "pnpm",
       "onFail": "warn",
-      "version": "^11.28.2"
+      "version": "^12.17.0"
+    },
+    "runtime": {
+      "name": "node",
+      "onFail": "warn",
+      "version": "^26.13.0"
     }
   },
   "homepage": "https://github.com/escapace/ansible-storage_setup#readme",
@@ -30,7 +34,7 @@
   "private": true,
   "repository": "escapace/ansible-storage_setup",
   "scripts": {
-    "format": "syncpack format && eslint --no-warn-ignored --fix && prettier --log-level warn --no-error-on-unmatched-pattern -uw .",
+    "format": "syncpack format && eslint --no-warn-ignored --fix && oxfmt",
     "lint": "ls-lint --config .ls-lint.yaml && eslint",
     "ls-lint": "ls-lint --config .ls-lint.yaml",
     "prepare": "lefthook install",

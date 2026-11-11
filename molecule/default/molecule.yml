@@ -1,9 +1,9 @@
 ---
-prerun: false
 scenario:
   # Only schedule actions with playbooks; no prepare/cleanup/side-effect hooks exist.
   test_sequence: [dependency, destroy, syntax, create, converge, idempotence, verify, destroy]
   check_sequence: [dependency, destroy, syntax, create, converge, check, destroy]
+prerun: false
 ansible:
   cfg:
     defaults:

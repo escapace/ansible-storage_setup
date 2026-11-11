@@ -27,11 +27,11 @@
     - name: inspect legacy role-owned paths
       ansible.builtin.stat:
         path: "{{ item }}"
+      register: storage_setup_legacy
+
       loop:
         - /etc/storage-setup.d/10-volume-group.conf
         - /etc/systemd/system/storage-setup.service.d/10-devices.conf
-      register: storage_setup_legacy
-
     - name: verify install-only role
       ansible.builtin.assert:
         that:
@@ -69,12 +69,12 @@
     - name: snapshot caller-owned files
       ansible.builtin.stat:
         path: "{{ item }}"
+      register: storage_setup_before
+
       loop:
         - /etc/storage-setup.d/20-data.conf
         - /etc/storage-setup.d/30-logs.conf
         - /etc/systemd/system/storage-setup.service.d/90-caller.conf
-      register: storage_setup_before
-
     - name: reapply install-only role
       ansible.builtin.include_role:
         name: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | basename }}"
@@ -82,9 +82,9 @@
     - name: inspect preserved caller-owned files
       ansible.builtin.stat:
         path: "{{ item.item }}"
-      loop: "{{ storage_setup_before.results }}"
       register: storage_setup_after
 
+      loop: "{{ storage_setup_before.results }}"
     - name: verify caller ownership is preserved
       ansible.builtin.assert:
         that:
